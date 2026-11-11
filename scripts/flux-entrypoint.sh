@@ -71,9 +71,11 @@ if [ ! -L "${steam_home}/depotcache" ]; then
 fi
 
 # STEAMAPPBRANCH is the name the image this replaces used (and a spec may still carry);
-# STEAM_BRANCH is the name the rest of our images use.
-if ! branch="$(flux_steam_branch "${STEAMAPPBRANCH:-${STEAM_BRANCH:-}}")"; then
-  flux_log "ERROR STEAMAPPBRANCH='${STEAMAPPBRANCH:-${STEAM_BRANCH:-}}' is not a branch name; refusing to start"
+# STEAM_BRANCH is the name the rest of our images use. With neither, the image's own default: the
+# :b42 tag installs `public`, the :b41 tag `legacy41`.
+wanted_branch="${STEAMAPPBRANCH:-${STEAM_BRANCH:-${FLUX_DEFAULT_BRANCH:-}}}"
+if ! branch="$(flux_steam_branch "${wanted_branch}")"; then
+  flux_log "ERROR the Steam branch '${wanted_branch}' is not a branch name; refusing to start"
   exit 42
 fi
 export FLUX_BRANCH="${branch}"
@@ -329,6 +331,13 @@ while true; do
   fi
   wait_for_generation
   rc="${game_rc}"
+  # start-server.sh ends with `exit 0` whatever the game did (a SIGKILL, a JVM crash), so the exit
+  # status alone cannot tell a quit from a crash. The game's log can: a server that was told to
+  # quit says so (flux_shutdown_reached), a crashed one does not.
+  graceful=0
+  if [ "${clean_stop}" = "1" ] || { [ "${rc}" = "0" ] && flux_shutdown_reached "${d}/Logs" "${FLUX_STARTED_AT}"; }; then
+    graceful=1
+  fi
   rm -f "${FLUX_STARTED_AT}"
 
   reason=""
@@ -342,7 +351,7 @@ while true; do
 
   # The server ends with 0 when it was told to quit (an admin's `quit` over RCON, or the
   # console's): that is a restart someone asked for.
-  if [ -z "${reason}" ] && { [ "${rc}" = "0" ] || [ "${clean_stop}" = "1" ]; }; then
+  if [ -z "${reason}" ] && [ "${graceful}" = "1" ]; then
     reason="requested: the server quit (exit ${rc})"
   fi
   [ -z "${reason}" ] && reason="the server ended on its own (exit ${rc})"

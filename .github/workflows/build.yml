@@ -107,23 +107,55 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # The same image again with Build 41 as its default Steam branch (:b41). Only the last layer
+      # differs, so this is a cache hit.
+      - name: Build the Build 41 variant
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          build-args: |
+            FLUX_IMAGE_VERSION=${{ env.VERSION }}
+            FLUX_DEFAULT_BRANCH=legacy41
+            BASE_IMAGE=${{ needs.check.outputs.base }}@${{ needs.check.outputs.base_digest }}
+          tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}-b41
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ env.VERSION }}
+            org.opencontainers.image.base.name=${{ needs.check.outputs.base }}
+            org.opencontainers.image.base.digest=${{ needs.check.outputs.base_digest }}
+          cache-from: type=gha
+
       - name: Test the image
-        run: ./tests/test-image.sh "${IMAGE_NAME}:${{ github.sha }}"
+        run: |
+          ./tests/test-image.sh "${IMAGE_NAME}:${{ github.sha }}"
+          test "$(docker run --rm --entrypoint printenv "${IMAGE_NAME}:${{ github.sha }}" FLUX_DEFAULT_BRANCH)" = public
+          test "$(docker run --rm --entrypoint printenv "${IMAGE_NAME}:${{ github.sha }}-b41" FLUX_DEFAULT_BRANCH)" = legacy41
 
       # A version tag is written once. A later run on the same VERSION (the weekly rebuild, or a
       # change that forgot to bump it) moves :latest and adds its commit tag, never rewrites
       # :<VERSION>, so a server pinned to a version keeps exactly that image.
-      - name: Push the tested image
+      #   :b42 :latest :<VERSION>   Build 42 (Steam branch public)
+      #   :b41 :<VERSION>-b41       Build 41 (Steam branch legacy41)
+      - name: Push the tested images
         run: |
           set -euo pipefail
           tested="${IMAGE_NAME}:${{ github.sha }}"
-          tags=(latest "${{ github.sha }}")
+          tested41="${IMAGE_NAME}:${{ github.sha }}-b41"
+          tags=(latest b42 "${{ github.sha }}")
+          tags41=(b41 "${{ github.sha }}-b41")
           if docker manifest inspect "${IMAGE_NAME}:${VERSION}" >/dev/null 2>&1; then
             echo "::warning::${IMAGE_NAME}:${VERSION} already exists and is not rewritten; bump VERSION to publish a new version tag"
           else
             tags+=("${VERSION}")
+            tags41+=("${VERSION}-b41")
           fi
           for tag in "${tags[@]}"; do
             docker tag "${tested}" "${IMAGE_NAME}:${tag}"
+            docker push "${IMAGE_NAME}:${tag}"
+          done
+          for tag in "${tags41[@]}"; do
+            docker tag "${tested41}" "${IMAGE_NAME}:${tag}"
             docker push "${IMAGE_NAME}:${tag}"
           done

@@ -12,7 +12,9 @@ them for the patterns this one follows. It replaces `danixu86/project-zomboid-de
 migration. The environment variables are that image's on purpose.
 
 The rule that shapes everything: **the game is not in the image, and the build is the Steam branch,
-not a tag.** SteamCMD installs and updates it on every start; `legacy41` is Build 41. A new image
+not a version tag.** SteamCMD installs and updates it on every start; `legacy41` is Build 41, and Steam keeps
+versioned branches (`42.19`, ...) that pin an older Build 42. The image is published twice, `:b42` and `:b41`,
+identical but for `FLUX_DEFAULT_BRANCH`; the hub reads the build off that tag. A new image
 is a redeploy of every server (FluxOS's image update service), so it is for changes to the scripts
 only.
 

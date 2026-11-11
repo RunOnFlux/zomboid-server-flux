@@ -18,6 +18,10 @@ FROM ${BASE_IMAGE}
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG FLUX_IMAGE_VERSION=dev
+# Which Steam branch a start installs when the spec names none: the image is published twice, as
+# :b42 (public, Build 42, also :latest) and :b41 (legacy41, Build 41). The tag is how the hub tells
+# the two builds apart; STEAMAPPBRANCH in the spec, when there is one, wins (a pinned version).
+ARG FLUX_DEFAULT_BRANCH=public
 
 # util-linux: flock, runuser. locales: the server's language (LANG). python3, NOT
 # python3-minimal (no shutil/zipfile). dos2unix is not needed: the config script strips the
@@ -49,6 +53,7 @@ ENV HOME=/home/steam
 RUN runuser -u steam -- env HOME=/home/steam steamcmd +quit >/dev/null 2>&1; test -d /home/steam/.local/share/Steam
 
 ENV FLUX_IMAGE_VERSION=${FLUX_IMAGE_VERSION} \
+    FLUX_DEFAULT_BRANCH=${FLUX_DEFAULT_BRANCH} \
     LANG=en_US.UTF-8
 
 WORKDIR /home/steam

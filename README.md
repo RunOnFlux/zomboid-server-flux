@@ -2,7 +2,9 @@
 
 Project Zomboid dedicated server for [Flux](https://runonflux.com): `runonflux/zomboid-server-flux`.
 One image for Build 42 and Build 41, with the game installed by SteamCMD on the install volume
-instead of baked in.
+instead of baked in. Tags: `:b42` (also `:latest`) installs the `public` branch, `:b41` the `legacy41`
+branch; they are the same image apart from that default, and a `STEAMAPPBRANCH` in the spec wins
+(a versioned branch such as `42.19` pins an older Build 42).
 
 It replaces `danixu86/project-zomboid-dedicated-server` on Flux, whose scripts it is a rewrite of
 (GPL-3, see `LICENSE`; thank you Danixu). The environment variables are the same on purpose, so a
@@ -11,7 +13,7 @@ server's spec and its data volume move over as they are. What changed, and why:
 | | the image it replaces | this image |
 |---|---|---|
 | Game | baked in, one image per version | installed on start into the install volume |
-| Build | the image tag (`42.20.4-release`) | the Steam branch: `STEAMAPPBRANCH=public` (Build 42), `legacy41` (Build 41), `unstable` |
+| Build | the image tag (`42.20.4-release`) | the Steam branch: `public` (Build 42), `legacy41` (Build 41), or a versioned one (`42.19`) to pin; the image tag `:b42`/`:b41` sets the default |
 | Build 41 | stopped at 41.78.19 when Build 42 went stable (Steam's is 41.78.21) | installed from `legacy41`, always current |
 | Game update | a new image, rolled out by FluxOS as a redeploy | the server notices (Steam, every 10 minutes), warns in game, saves and restarts onto it |
 | Scheduled restart | none | `FLUX_RESTART_TIME` + `TZ`, with a warning in game |
@@ -43,7 +45,7 @@ name of the ini and the world), `DISPLAYNAME` (browser name), `SERVERPRESET` (+ 
 `SELF_MANAGED_MODS` (true: `Mods` and `WorkshopItems` stay as they are in the ini, which is what the
 dashboard edits; false: written from `MOD_IDS` and `WORKSHOP_IDS`), `FORCESTEAMCLIENTSOUPDATE`.
 
-Ours: `STEAMAPPBRANCH` (also `STEAM_BRANCH`), `RCON_PORT` (ini `RCONPort`, default 27015),
+Ours: `STEAMAPPBRANCH` (also `STEAM_BRANCH`; default from the image tag), `RCON_PORT` (ini `RCONPort`, default 27015),
 `FLUX_RESTART_TIME` (`HH:MM`, empty = no daily restart), `TZ`, `FLUX_RESTART_WARN_MINUTES`,
 `FLUX_AUTO_UPDATE` (on unless `false`), `FLUX_UPDATE_CHECK_MINUTES`, `FLUX_UPDATE_WARN_MINUTES`,
 `SKIP_UPDATE` (start the installed build as it is), `FLUX_STOP_GRACE`,

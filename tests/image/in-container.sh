@@ -1,5 +1,6 @@
 #!/bin/bash
 # Runs INSIDE the image (tests/test-image.sh). The repository's tests/ folder is mounted at /t.
+# shellcheck disable=SC2016  # single quotes on purpose: the dollars in the test values must stay literal
 set -uo pipefail
 export LC_ALL=C
 
@@ -64,7 +65,7 @@ logs="${HOME}/Zomboid/Logs"
 mkdir -p "${logs}"
 log="${logs}/$(date +%Y-%m-%d_%H-%M-%S)_DebugLog-server.txt"
 echo "LOG  : General      f:0 st:1> version=42.99.1 abcdef" >"${log}"
-[ -f /tmp/game-crash ] && exit 3
+[ -f /tmp/game-crash ] && exit 0   # like start-server.sh: always 0, even for a crash
 while IFS= read -r line; do
   case "${line}" in
     servermsg*) echo "${line}" >>/tmp/console-seen ;;
@@ -124,6 +125,12 @@ check "the old server was asked to quit (saved)" "0" "$(status grep -q '^saved$'
 check "it was ended at its shutdown line, not after the grace" "0" "$(grep -c 'WARN the server was asked to stop' "${logfile}")"
 check "and it was not counted as a crash" "0" "$(grep -c 'restarts within' "${logfile}")"
 
+# An admin's own `quit` (RCON, or the console): a restart someone asked for, not a crash.
+flux-console quit
+check "an admin's quit brings up generation 3" "0" "$(wait_for 'starting the server (generation 3)' 20; echo $?)"
+check "and is not counted as a crash" "0" "$(grep -c 'restarts within' "${logfile}")"
+check "it says so" "1" "$(grep -c 'requested: the server quit' "${logfile}" | sed 's/^[1-9].*/1/')"
+
 # A stop (what Docker sends): saved, cut short at the shutdown line, exit 0, inside Docker's 10 s.
 wait_for 'game version' 10
 sleep 1
@@ -134,8 +141,44 @@ rc=$?
 t1=$(date +%s)
 check "a SIGTERM ends the supervisor with 0" "0" "${rc}"
 check "inside five seconds, though the game hangs for sixty" "0" "$([ $((t1 - t0)) -le 5 ] && echo 0 || echo "took $((t1 - t0))s")"
-check "and the world was told to save" "2" "$(grep -c '^saved$' /tmp/console-seen)"
+check "and the world was told to save" "3" "$(grep -c '^saved$' /tmp/console-seen)"
 check "no game process is left" "" "$(pgrep -f '/ProjectZomboid64( |$)' || true)"
+
+# Characters a shell would mangle, in every value that reaches the server.
+start 'ADMINPASSWORD=a b"c$d`e\x' 'DISPLAYNAME=Ünï & "q" $HOME' "PASSWORD=it's|a&b" SERVERNAME=odd
+wait_for 'starting the server (generation 1)' 20
+check "a password with spaces, quotes, dollar and backtick reaches the game as ONE argument" 'a b"c$d`e\x' "$(grep -A1 -x -- '-adminpassword' /tmp/game-args | tail -1)"
+check "the display name is written literally" 'PublicName=Ünï & "q" $HOME' "$(grep '^PublicName=' /home/steam/Zomboid/Server/odd.ini)"
+check "the join password is written literally" "Password=it's|a&b" "$(grep '^Password=' /home/steam/Zomboid/Server/odd.ini)"
+kill -TERM "${sup}"; wait "${sup}"
+
+# Mods from the environment (SELF_MANAGED_MODS off): the lists land in the ini.
+start SELF_MANAGED_MODS=false SERVERNAME=modded 'MOD_IDS=\ModA;\ModB' 'WORKSHOP_IDS=111;222'
+wait_for 'starting the server (generation 1)' 20
+check "MOD_IDS lands in Mods" 'Mods=\ModA;\ModB' "$(grep '^Mods=' /home/steam/Zomboid/Server/modded.ini)"
+check "WORKSHOP_IDS lands in WorkshopItems" 'WorkshopItems=111;222' "$(grep '^WorkshopItems=' /home/steam/Zomboid/Server/modded.ini)"
+kill -TERM "${sup}"; wait "${sup}"
+
+# A restart asked for while another is under way is dropped, not stacked.
+start
+wait_for 'game version' 20
+( exec 9>/tmp/flux/restart.lock; flock 9; sleep 4 ) &
+locker=$!
+sleep 1
+out="$(/opt/flux/flux-restart.sh "update: second" 0 "x" 2>&1)"
+check "a second restart while one is under way is dropped" "1" "$(grep -c 'a restart is already under way' <<<"${out}")"
+wait "${locker}"
+kill -TERM "${sup}"; wait "${sup}"
+
+# The Build 41 image (:b41) is the same image with another default branch.
+start FLUX_DEFAULT_BRANCH=legacy41
+wait_for 'starting the server (generation 1)' 20
+check "the :b41 default installs legacy41" "steamcmd run: legacy41" "$(head -1 /tmp/steam-runs)"
+kill -TERM "${sup}"; wait "${sup}"
+start FLUX_DEFAULT_BRANCH=legacy41 STEAMAPPBRANCH=42.19
+wait_for 'starting the server (generation 1)' 20
+check "a branch in the spec wins over the image's default (a pinned version)" "steamcmd run: 42.19" "$(head -1 /tmp/steam-runs)"
+kill -TERM "${sup}"; wait "${sup}"
 
 # The Build 41 branch.
 start STEAMAPPBRANCH=legacy41

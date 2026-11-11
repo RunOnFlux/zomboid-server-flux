@@ -20,6 +20,12 @@ on:
     - cron: '0 6 * * 1'
   workflow_dispatch:
 
+# One publish at a time, in the order the commits came: two close pushes must not finish out of order
+# and leave :latest on the older one.
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   IMAGE_NAME: runonflux/zomboid-server-flux
 
@@ -69,9 +75,10 @@ jobs:
 
   build:
     needs: [test, check]
-    # A pull request gets the tests and nothing else: it must not publish. A scheduled run with
+    # A pull request, or a manual run from another branch, gets the tests and nothing else: it must not
+    # publish (:latest is what every server runs). A scheduled run with
     # nothing new stops at the check.
-    if: github.event_name != 'pull_request' && needs.check.outputs.build == 'true'
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && needs.check.outputs.build == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

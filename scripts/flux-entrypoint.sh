@@ -79,6 +79,12 @@ if ! branch="$(flux_steam_branch "${wanted_branch}")"; then
   exit 42
 fi
 export FLUX_BRANCH="${branch}"
+# The server name is the ini's file name. A name the config step would refuse (anything but letters,
+# digits and _ . -) would start the game on defaults, ignoring the spec: refuse instead of that.
+if ! [[ "${SERVERNAME:-servertest}" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+  flux_log "ERROR SERVERNAME '${SERVERNAME}' may only hold letters, digits and _ . -; refusing to start"
+  exit 42
+fi
 # Which build's mod folders the map scan reads: the legacy41 branch is Build 41, anything else 42.
 case "${branch}" in
   legacy41* | 41* | b41*) export FLUX_BUILD=41 ;;
@@ -251,7 +257,11 @@ build_args() {
   [ -n "${MODFOLDERS:-}" ] && GAME_ARGS+=("-modfolders" "${MODFOLDERS}")
   flux_truthy "${DEBUG:-}" && GAME_ARGS+=("-debug")
   [ -n "${ADMINUSERNAME:-}" ] && GAME_ARGS+=("-adminusername" "${ADMINUSERNAME}")
-  [ -n "${ADMINPASSWORD:-}" ] && GAME_ARGS+=("-adminpassword" "${ADMINPASSWORD}")
+  if [ -n "${ADMINPASSWORD:-}" ]; then
+    GAME_ARGS+=("-adminpassword" "${ADMINPASSWORD}")
+  elif [ ! -f "${d}/db/${SERVERNAME:-servertest}.db" ]; then
+    flux_log "WARN ADMINPASSWORD is not set and this world is new: the game waits for an admin password on its console. Set ADMINPASSWORD."
+  fi
   GAME_ARGS+=("-servername" "${SERVERNAME:-servertest}")
   [ -n "${IP:-}" ] && GAME_ARGS+=("${IP}" "-ip" "${IP}")
   [ -n "${PORT:-}" ] && GAME_ARGS+=("-port" "${PORT}")
@@ -272,6 +282,11 @@ start_generation() {
   prepare_config
   build_args
   disk_note
+  # A stop that arrived while the config was being prepared had no game to tell: do not start one.
+  [ "${terminating}" = "1" ] && return 2
+  # Whatever a stop or a restart left unread in the console (the previous game died before reading
+  # it) would be this game's first command: a stale `quit`.
+  while read -r -t 0.05 -u "${console_fd}" _; do :; done
   flux_log "starting the server (generation ${generation})"
   date -u +%s >"${FLUX_STARTED_AT}"
   (
@@ -285,6 +300,8 @@ start_generation() {
     exec runuser -u "${FLUX_STEAM_USER}" -- env "HOME=${FLUX_HOME}" ./start-server.sh "${GAME_ARGS[@]}" <"${FLUX_CONSOLE}"
   ) &
   game_pid=$!
+  # A stop that came between the check above and the fork: the handler had no pid to act on.
+  [ "${terminating}" = "1" ] && printf 'quit\n' >&"${console_fd}"
   # The game's own version, for the dashboard (flux-version): it is in the server log, once the
   # game has started far enough to print it.
   (

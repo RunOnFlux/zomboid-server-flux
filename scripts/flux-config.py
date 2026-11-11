@@ -226,6 +226,7 @@ def add_spawn_regions(install, spawn_file, found, say):
 
 
 STATE_FILE = ".flux-env-applied.json"
+INI_KEY = "_ini"
 
 
 def digest(value):
@@ -262,6 +263,16 @@ def apply_env_settings(ini, server_dir, pairs, say):
     """
     state = load_state(server_dir)
     changed = False
+    # The record belongs to one ini. A new SERVERNAME, or an ini that is empty again (a new world, a
+    # restore), starts from nothing, or its keys would be skipped as "already applied". A record
+    # from before this field existed is adopted when the ini has content.
+    name = os.path.basename(ini)
+    empty = not os.path.isfile(ini) or os.path.getsize(ini) == 0
+    if empty or state.get(INI_KEY, name) != name:
+        state = {}
+    if state.get(INI_KEY) != name:
+        state[INI_KEY] = name
+        changed = True
     for key, value in pairs:
         marker = digest(value)
         if state.get(key) == marker:

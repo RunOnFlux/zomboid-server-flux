@@ -32,6 +32,14 @@ check "flux-config.py starts" "64" "$(status python3 /opt/flux/flux-config.py)"
 for script in flux-entrypoint.sh flux-scheduler.sh flux-restart.sh flux-updatewatch.sh flux-console.sh flux-version.sh flux-lib.sh; do
   check "${script} parses" "0" "$(status bash -n "/opt/flux/${script}")"
 done
+check "the entrypoint refuses a SERVERNAME the ini could not carry" "42" "$(SERVERNAME='My Server' FLUX_LOG='' timeout 20 /opt/flux/flux-entrypoint.sh >/dev/null 2>&1; echo $?)"
+# The console is drained before each game starts: a `quit` the previous game never read must not
+# be the next one's first command (the idiom start_generation uses).
+f=/tmp/fifo-drain; rm -f "${f}"; mkfifo "${f}"; exec {fd}<>"${f}"
+printf 'quit\nservermsg "x"\n' >&"${fd}"
+while read -r -t 0.05 -u "${fd}" _; do :; done
+check "a stale console line is drained" "" "$(timeout 1 bash -c 'read -r -t 0.2 -u "$1" l && echo "$l"' _ "${fd}" 2>/dev/null)"
+exec {fd}>&-
 check "the entrypoint refuses a branch that is not a name" "42" "$(STEAMAPPBRANCH='public +quit' FLUX_LOG='' timeout 20 /opt/flux/flux-entrypoint.sh >/dev/null 2>&1; echo $?)"
 
 # --- The supervisor, around a stand-in Steam and a stand-in server -----------------------------

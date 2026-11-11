@@ -196,6 +196,28 @@ check "a join password the spec dropped opens the server" "Password=" "$(grep '^
 check "a password is never echoed into the log" "0" "$(grep -c 'one\|edited' <<<"${out}")"
 check "the record holds hashes, not secrets" "0" "$(grep -c 'one\|edited\|Second' "${c}/data/Server/.flux-env-applied.json")"
 
+# The record belongs to ONE ini: a new SERVERNAME is a new ini, and gets every key of the spec.
+prep "${c}" SERVERNAME=e2 DISPLAYNAME=Second PASSWORD=two RCONPASSWORD=rc PUBLIC=true SELF_MANAGED_MODS=true >/dev/null
+f2="$(ini "${c}" e2)"
+check "a new SERVERNAME gets the join password" "Password=two" "$(grep '^Password=' "${f2}")"
+check "and the RCON password" "RCONPassword=rc" "$(grep '^RCONPassword=' "${f2}")"
+check "and the name, though its value did not change" "PublicName=Second" "$(grep '^PublicName=' "${f2}")"
+# An ini that is empty again (restored, or a new world on the same volume) is applied in full.
+: >"${f2}"
+prep "${c}" SERVERNAME=e2 DISPLAYNAME=Second PASSWORD=two RCONPASSWORD=rc PUBLIC=true SELF_MANAGED_MODS=true >/dev/null
+check "an emptied ini gets the spec again" "Password=two" "$(grep '^Password=' "${f2}")"
+# A record from before the ini was named in it is adopted, not reset (an edit still sticks).
+c="${tmp}/c7"; layout "${c}"
+prep "${c}" SERVERNAME=g DISPLAYNAME=First SELF_MANAGED_MODS=true >/dev/null
+f="$(ini "${c}" g)"
+python3 - "${c}/data/Server/.flux-env-applied.json" <<'PY'
+import json, sys
+p = sys.argv[1]; d = json.load(open(p)); d.pop("_ini", None); json.dump(d, open(p, "w"))
+PY
+sed -i 's/^PublicName=.*/PublicName=Edited/' "${f}"
+prep "${c}" SERVERNAME=g DISPLAYNAME=First SELF_MANAGED_MODS=true >/dev/null
+check "an old record without the ini name is adopted" "PublicName=Edited" "$(grep '^PublicName=' "${f}")"
+
 # Workshop maps: merged into Map= keeping the owner's order, base map last, no duplicates.
 c="${tmp}/c4"; layout "${c}"
 w="${c}/server/steamapps/workshop/content/108600"

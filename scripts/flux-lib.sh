@@ -265,10 +265,13 @@ flux_servermsg() {
 # another 1.4 s to exit. Docker's own deadline on Flux is 10 s, so the supervisor ends the game at
 # this line instead of racing it.
 flux_shutdown_reached() {
+  local f
   [ -f "$2" ] || return 1
-  [ -n "$(find "$1" -maxdepth 1 -name '*DebugLog-server.txt' -newer "$2" 2>/dev/null | head -1)" ] || return 1
-  find "$1" -maxdepth 1 -name '*DebugLog-server.txt' -newer "$2" -print0 2>/dev/null \
-    | xargs -0 grep -q 'waiting for UdpEngine thread termination' 2>/dev/null || return 1
+  # The newest log of this generation, and only its tail: a modded server's log is megabytes, and
+  # this runs every second (every fifth of one while a stop is under way).
+  f="$(find "$1" -maxdepth 1 -name '*DebugLog-server.txt' -newer "$2" 2>/dev/null | sort | tail -1)"
+  [ -n "${f}" ] || return 1
+  tail -c 65536 "${f}" 2>/dev/null | grep -q 'waiting for UdpEngine thread termination'
 }
 
 # Kills every game process still alive between two generations, and prints how many it found. A

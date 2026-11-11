@@ -48,6 +48,7 @@ while [ $# -gt 0 ]; do
 done
 [ -n "${dir}" ] || exit 0
 [ -f /tmp/steam-fail ] && { echo "ERROR! Failed to install app '380870' (Missing configuration)"; exit 8; }
+[ -f /tmp/steam-nobeta ] && [ "${branch}" = 42.1 ] && { echo "ERROR! Failed to set beta '42.1'"; exit 8; }
 echo "steamcmd run: ${branch}" >>/tmp/steam-runs
 mkdir -p "${dir}/steamapps" "${dir}/media/lua/shared/Sandbox"
 cp /t/fixtures/Apocalypse.lua /t/fixtures/Outbreak.lua "${dir}/media/lua/shared/Sandbox/"
@@ -179,6 +180,16 @@ start FLUX_DEFAULT_BRANCH=legacy41 STEAMAPPBRANCH=42.19
 wait_for 'starting the server (generation 1)' 20
 check "a branch in the spec wins over the image's default (a pinned version)" "steamcmd run: 42.19" "$(head -1 /tmp/steam-runs)"
 kill -TERM "${sup}"; wait "${sup}"
+
+# A pinned branch Steam no longer has, on a node with nothing installed: the default is installed.
+rm -rf /home/steam/pz-dedicated/* /home/steam/pz-dedicated/.[a-z]*
+touch /tmp/steam-nobeta
+start STEAMAPPBRANCH=42.1
+wait_for 'starting the server (generation 1)' 30
+check "a branch Steam refuses falls back to the default" "1" "$(grep -c "has no branch '42.1' any more; installing 'public'" "${logfile}")"
+check "and installs it" "steamcmd run: public" "$(tail -1 /tmp/steam-runs)"
+kill -TERM "${sup}"; wait "${sup}"
+rm -f /tmp/steam-nobeta
 
 # The Build 41 branch.
 start STEAMAPPBRANCH=legacy41

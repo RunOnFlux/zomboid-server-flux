@@ -165,6 +165,25 @@ update_server() {
     disk_note
     sleep 5
   done
+  # A pinned branch Steam has since removed ("Failed to set beta"), on a node with nothing installed
+  # (a new node after a failover): install the build's default branch instead of looping on the
+  # refusal. The pin is still in the spec, so an installed server keeps starting its own build.
+  if [ ! -x "${s}/${FLUX_GAME_BINARY}" ] && [ "${FLUX_BRANCH}" != "${FLUX_DEFAULT_BRANCH:-public}" ] \
+    && grep -q "Failed to set beta" "${out}" 2>/dev/null; then
+    flux_log "WARN Steam has no branch '${FLUX_BRANCH}' any more; installing '${FLUX_DEFAULT_BRANCH:-public}' instead"
+    FLUX_BRANCH="${FLUX_DEFAULT_BRANCH:-public}"
+    beta=()
+    [ "${FLUX_BRANCH}" != "public" ] && beta=(-beta "${FLUX_BRANCH}")
+    for attempt in 1 2; do
+      validate=""
+      [ "${attempt}" = "2" ] && validate="validate"
+      # shellcheck disable=SC2086  # validate is "" or "validate"
+      flux_as_steam steamcmd +force_install_dir "${s}" +login anonymous +app_update "${FLUX_STEAM_APP}" "${beta[@]}" ${validate} +quit \
+        2>&1 | tee "${out}"
+      [ "${PIPESTATUS[0]}" = "0" ] && [ -x "${s}/${FLUX_GAME_BINARY}" ] && { ok=1; break; }
+      sleep 5
+    done
+  fi
   if [ ! -x "${s}/${FLUX_GAME_BINARY}" ]; then
     flux_log "ERROR could not install the server from Steam"
     return 1

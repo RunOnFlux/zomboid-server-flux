@@ -19,6 +19,7 @@ server's spec and its data volume move over as they are. What changed, and why:
 | Scheduled restart | none | `FLUX_RESTART_TIME` + `TZ`, with a warning in game |
 | Stop | `quit` on the console, then Docker's 10 s race | the same, but ended at the game's own "saved, waiting" line: 9 s measured, exit 0 |
 | A preset the build lacks | `exit 1`, the container never boots | warns, starts on Apocalypse (an existing world's sandbox file is never touched) |
+| A setting from the spec (name, password, visibility) | written to the ini on every start, so an edit in the ini was put back | written only when the spec changed (a hash per key in `Server/.flux-env-applied.json`, on the synced volume): the later of the two wins |
 | Root-owned files in the data volume | the server fails ("database is corrupt") | fixed before every start |
 | Java heap with no `MEMORY` | the JVM's own (a quarter of the NODE's RAM) | 75% of the container's memory |
 

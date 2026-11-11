@@ -177,6 +177,25 @@ check "with no MOD_IDS the list is cleared (image behaviour)" "Mods=" "$(grep '^
 prep "${c}" SERVERNAME=a SELF_MANAGED_MODS=true MOD_IDS=zzz >/dev/null
 check "SELF_MANAGED_MODS leaves the list as it is" "Mods=" "$(grep '^Mods=' "${f}")"
 
+# The spec writes a setting only when the SPEC changed: an edit in the ini sticks (the dashboard's
+# Server Settings tab, or an admin), and a changed spec lands on the next start.
+c="${tmp}/c6"; layout "${c}"
+prep "${c}" SERVERNAME=e DISPLAYNAME=First PASSWORD=one PUBLIC=true SELF_MANAGED_MODS=true >/dev/null
+f="$(ini "${c}" e)"
+check "first start applies the spec" "PublicName=First" "$(grep '^PublicName=' "${f}")"
+sed -i 's/^PublicName=.*/PublicName=Edited in the panel/;s/^Password=.*/Password=edited/' "${f}"
+out="$(prep "${c}" SERVERNAME=e DISPLAYNAME=First PASSWORD=one PUBLIC=true SELF_MANAGED_MODS=true)"
+check "an edit in the ini survives a restart with the same spec" "PublicName=Edited in the panel" "$(grep '^PublicName=' "${f}")"
+check "and so does an edited password" "Password=edited" "$(grep '^Password=' "${f}")"
+check "nothing is reported as applied" "0" "$(grep -c 'from the spec' <<<"${out}")"
+prep "${c}" SERVERNAME=e DISPLAYNAME=Second PASSWORD=one PUBLIC=true SELF_MANAGED_MODS=true >/dev/null
+check "a changed spec lands on the next start" "PublicName=Second" "$(grep '^PublicName=' "${f}")"
+check "and only that key" "Password=edited" "$(grep '^Password=' "${f}")"
+out="$(prep "${c}" SERVERNAME=e DISPLAYNAME=Second SELF_MANAGED_MODS=true)"
+check "a join password the spec dropped opens the server" "Password=" "$(grep '^Password=' "${f}")"
+check "a password is never echoed into the log" "0" "$(grep -c 'one\|edited' <<<"${out}")"
+check "the record holds hashes, not secrets" "0" "$(grep -c 'one\|edited\|Second' "${c}/data/Server/.flux-env-applied.json")"
+
 # Workshop maps: merged into Map= keeping the owner's order, base map last, no duplicates.
 c="${tmp}/c4"; layout "${c}"
 w="${c}/server/steamapps/workshop/content/108600"

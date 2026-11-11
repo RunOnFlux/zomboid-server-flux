@@ -26,6 +26,8 @@ Environment, all optional:
 Prints one line per thing it did. Never raises: a file it cannot write is a warning, and the
 server starts with what is there.
 """
+import hashlib
+import json
 import os
 import re
 import shutil
@@ -223,6 +225,58 @@ def add_spawn_regions(install, spawn_file, found, say):
         say("spawn regions added for the new maps")
 
 
+STATE_FILE = ".flux-env-applied.json"
+
+
+def digest(value):
+    return hashlib.sha256(value.encode("utf-8", errors="surrogateescape")).hexdigest()[:16]
+
+
+def load_state(server_dir):
+    try:
+        with open(os.path.join(server_dir, STATE_FILE), encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def save_state(server_dir, state):
+    path = os.path.join(server_dir, STATE_FILE)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(state, f, sort_keys=True)
+    os.replace(tmp, path)
+
+
+def apply_env_settings(ini, server_dir, pairs, say):
+    """Write a setting from the environment into the ini ONLY WHEN THE ENVIRONMENT CHANGED since it
+    was last written, and leave the ini alone otherwise.
+
+    The image this replaces wrote every one of these on every start, so a name, a password or the
+    visibility changed in the ini (the dashboard's Server Settings tab, or an admin) was put back
+    to the spec's value at the next restart, with no error anywhere. Now the later of the two wins:
+    an edit in the ini sticks until the spec changes, and a change of the spec lands the next start.
+    The record is a hash per key, in the SYNCED data volume next to the ini, so a standby that takes
+    over knows what was already applied. A server with no record applies everything, as before.
+    """
+    state = load_state(server_dir)
+    changed = False
+    for key, value in pairs:
+        marker = digest(value)
+        if state.get(key) == marker:
+            continue
+        set_ini_option(ini, key, value)
+        state[key] = marker
+        changed = True
+        if key != "Password" and key != "RCONPassword":
+            say("%s=%s (from the spec)" % (key, value))
+        else:
+            say("%s set (from the spec)" % key)
+    if changed:
+        save_state(server_dir, state)
+
+
 def prepare(env, say):
     install = env.get("FLUX_SERVER_DIR") or "/home/steam/pz-dedicated"
     data = env.get("FLUX_DATA_DIR") or "/home/steam/Zomboid"
@@ -247,6 +301,10 @@ def prepare(env, say):
     pairs = []
     if env.get("PASSWORD"):
         pairs.append(("Password", env["PASSWORD"]))
+    elif "Password" in load_state(server_dir):
+        # The spec had a join password and no longer does: the server is open again. (The panel
+        # drops an emptied variable, so "absent" is how "cleared" arrives.)
+        pairs.append(("Password", ""))
     if env.get("RCONPASSWORD"):
         pairs.append(("RCONPassword", env["RCONPASSWORD"]))
     if env.get("RCON_PORT"):
@@ -260,8 +318,7 @@ def prepare(env, say):
         pairs.append(("PublicName", env["DISPLAYNAME"]))
     if env.get("UDPPORT"):
         pairs.append(("UDPPort", env["UDPPORT"]))
-    for key, value in pairs:
-        set_ini_option(ini, key, value)
+    apply_env_settings(ini, server_dir, pairs, say)
 
     if truthy(env.get("SELF_MANAGED_MODS")):
         say("SELF_MANAGED_MODS is set: Mods and WorkshopItems stay as they are in the ini")

@@ -142,9 +142,21 @@ update_server() {
   #    of a fresh install gets past it. Never for a network failure, which a re-download cannot fix.
   # Then the build already installed is started anyway: a server on the old build is still better
   # than none, and the update watch tries again later.
-  local ok=0 validate out="${FLUX_RUN_DIR}/steamcmd.out"
+  local ok=0 validate out="${FLUX_RUN_DIR}/steamcmd.out" recorded switching=0
+  # A BRANCH CHANGE (a pin, going back to the newest, Build 41 <-> 42) is not an update to SteamCMD:
+  # on an install it already has, `app_update -beta <other>` answers "fully installed" and changes
+  # nothing, with or without `validate` (measured: public 26486687 stayed on 26486687 for
+  # -beta 42.19). Without the manifest it validates the files against the requested branch and
+  # downloads what differs, which is the switch. The branch the install holds is recorded.
+  recorded="$(cat "${FLUX_STATE_DIR}/branch" 2>/dev/null)"
+  if [ "${installed}" = "1" ] && [ -n "${recorded}" ] && [ "${recorded}" != "${FLUX_BRANCH}" ]; then
+    flux_log "switching the installed game from branch '${recorded}' to '${FLUX_BRANCH}': checking every file against it"
+    rm -f "${s}/steamapps/appmanifest_${FLUX_STEAM_APP}.acf"
+    switching=1
+  fi
   for attempt in 1 2 3; do
     validate=""
+    [ "${switching}" = "1" ] && [ "${attempt}" = "1" ] && validate="validate"
     case "${attempt}" in
       2) validate="validate" ;;
       3)
@@ -188,6 +200,8 @@ update_server() {
     flux_log "ERROR could not install the server from Steam"
     return 1
   fi
+  # What the install holds, for the next start's comparison (the fallback above may have changed it).
+  [ "${ok}" = "1" ] && printf '%s' "${FLUX_BRANCH}" >"${FLUX_STATE_DIR}/branch"
   local after
   after="$(flux_acf_buildid "${s}/steamapps/appmanifest_${FLUX_STEAM_APP}.acf")"
   if [ "${ok}" = "0" ]; then

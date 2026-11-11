@@ -191,6 +191,22 @@ check "and installs it" "steamcmd run: public" "$(tail -1 /tmp/steam-runs)"
 kill -TERM "${sup}"; wait "${sup}"
 rm -f /tmp/steam-nobeta
 
+# A change of branch on an install that exists: the manifest is dropped and the files validated.
+rm -rf /home/steam/pz-dedicated/* /home/steam/pz-dedicated/.[a-z]*
+start
+wait_for 'starting the server (generation 1)' 20
+kill -TERM "${sup}"; wait "${sup}"
+check "the first start records the branch it installed" "public" "$(cat /home/steam/pz-dedicated/.flux/branch)"
+start STEAMAPPBRANCH=42.19
+wait_for 'starting the server (generation 1)' 20
+check "a new branch on an existing install is announced" "1" "$(grep -c "switching the installed game from branch 'public' to '42.19'" "${logfile}")"
+check "and the files are validated against it" "steamcmd run: 42.19" "$(tail -1 /tmp/steam-runs)"
+kill -TERM "${sup}"; wait "${sup}"
+start STEAMAPPBRANCH=42.19
+wait_for 'starting the server (generation 1)' 20
+check "the same branch again is a plain update" "0" "$(grep -c 'switching the installed game' "${logfile}")"
+kill -TERM "${sup}"; wait "${sup}"
+
 # The Build 41 branch.
 start STEAMAPPBRANCH=legacy41
 wait_for 'starting the server (generation 1)' 20

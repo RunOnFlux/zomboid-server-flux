@@ -107,6 +107,7 @@ check "it was installed from the public branch" "steamcmd run: public" "$(head -
 check "the build id is read" "222" "$(flux-version | sed -n 's/.*"build":"\([0-9]*\)".*/\1/p')"
 check "the game version is recorded" "42.99.1" "$(flux-version | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')"
 check "flux-version names the branch" "public" "$(flux-version | sed -n 's/.*"branch":"\([^"]*\)".*/\1/p')"
+check "flux-version of a Build 41 tag, nothing installed yet, names legacy41" "legacy41" "$(FLUX_STATE_DIR=/tmp/no-state FLUX_DEFAULT_BRANCH=legacy41 flux-version | sed -n 's/.*"branch":"\([^"]*\)".*/\1/p')"
 check "the game runs as steam" "steam" "$(cat /tmp/game-user)"
 check "with HOME where the data lives" "/home/steam" "$(cat /tmp/game-home)"
 check "the Java heap comes first" "-Xms3g -Xmx3g --" "$(sed -n 1,3p /tmp/game-args | tr '\n' ' ' | sed 's/ $//')"
